@@ -63,6 +63,9 @@ func (r *gatewayController) EnsureRoutes(ctx context.Context, strategy *v1beta1.
 	if strategy.Traffic != nil {
 		is := intstr.FromString(*strategy.Traffic)
 		weightInt, _ := intstr.GetScaledValueFromIntOrPercent(&is, 100, true)
+		if weightInt < 0 {
+			weightInt = 0
+		}
 		weight = utilpointer.Int32(int32(weightInt))
 	}
 	matches := strategy.Matches

@@ -120,7 +120,7 @@ func (r *TrafficRoutingReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			newStatus.Phase = v1alpha1.TrafficRoutingPhaseFinalizing
 			newStatus.Message = "TrafficRouting is Finalizing"
 		} else {
-			done, err = r.trafficRoutingManager.DoTrafficRouting(newTrafficRoutingContext(tr))
+			done, err = r.trafficRoutingManager.DoTrafficRouting(newTrafficRoutingContext(tr), false)
 		}
 	case v1alpha1.TrafficRoutingPhaseFinalizing:
 		done, err = r.trafficRoutingManager.FinalisingTrafficRouting(newTrafficRoutingContext(tr), false)

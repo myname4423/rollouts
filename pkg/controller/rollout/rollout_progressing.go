@@ -74,6 +74,7 @@ func (r *RolloutReconciler) reconcileRolloutProgressing(rollout *v1beta1.Rollout
 			StableRevision:             rolloutContext.Workload.StableRevision,
 			CanaryRevision:             rolloutContext.Workload.CanaryRevision,
 			CurrentStepIndex:           1,
+			NextStepIndex:              util.NextBatchIndex(rollout, 1),
 			CurrentStepState:           v1beta1.CanaryStepStateUpgrade,
 			LastUpdateTime:             &metav1.Time{Time: time.Now()},
 		}
@@ -239,6 +240,7 @@ func (r *RolloutReconciler) handleRollbackDirectly(rollout *v1beta1.Rollout, wor
 func (r *RolloutReconciler) handleRollbackInBatches(rollout *v1beta1.Rollout, workload *util.Workload, newStatus *v1beta1.RolloutStatus) error {
 	// restart from the beginning
 	newStatus.CanaryStatus.CurrentStepIndex = 1
+	newStatus.CanaryStatus.NextStepIndex = util.NextBatchIndex(rollout, 1)
 	newStatus.CanaryStatus.CanaryRevision = workload.CanaryRevision
 	newStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
 	newStatus.CanaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
@@ -249,17 +251,24 @@ func (r *RolloutReconciler) handleRollbackInBatches(rollout *v1beta1.Rollout, wo
 
 func (r *RolloutReconciler) handleRolloutPlanChanged(c *RolloutContext) error {
 	newStepIndex, err := r.recalculateCanaryStep(c)
+	//全都跳到CanaryStepStatePaused就行了，然后newStepIndex只赋值给NextStepIndex就行了
 	if err != nil {
 		klog.Errorf("rollout(%s/%s) reCalculate Canary StepIndex failed: %s", c.Rollout.Namespace, c.Rollout.Name, err.Error())
 		return err
 	}
 	// canary step configuration change causes current step index change
-	c.NewStatus.CanaryStatus.CurrentStepIndex = newStepIndex
-	c.NewStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
+	//TODO - 这样有一个坏处，就是有一次Reconcile会显示为-1，让用户迷惑；不过用户也可以通过修改这个字段为-1，重新执行当前阶段
+	if c.NewStatus.CanaryStatus.NextStepIndex == newStepIndex {
+		c.NewStatus.CanaryStatus.NextStepIndex = -1
+	} else {
+		c.NewStatus.CanaryStatus.NextStepIndex = newStepIndex
+	}
+
+	c.NewStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStatePaused
 	c.NewStatus.CanaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
 	c.NewStatus.CanaryStatus.RolloutHash = c.Rollout.Annotations[util.RolloutHashAnnotation]
-	klog.Infof("rollout(%s/%s) canary step configuration change, and stepIndex(%d) state(%s)",
-		c.Rollout.Namespace, c.Rollout.Name, c.NewStatus.CanaryStatus.CurrentStepIndex, c.NewStatus.CanaryStatus.CurrentStepState)
+	klog.Infof("rollout(%s/%s) canary step configuration change, and NextStepIndex(%d) state(%s)",
+		c.Rollout.Namespace, c.Rollout.Name, c.NewStatus.CanaryStatus.NextStepIndex, c.NewStatus.CanaryStatus.CurrentStepState)
 	return nil
 }
 
@@ -269,6 +278,10 @@ func (r *RolloutReconciler) handleNormalRolling(c *RolloutContext) error {
 		klog.Infof("rollout(%s/%s) progressing rolling done", c.Rollout.Namespace, c.Rollout.Name)
 		progressingStateTransition(c.NewStatus, corev1.ConditionTrue, v1alpha1.ProgressingReasonFinalising, "Rollout has been completed and some closing work is being done")
 		return nil
+	}
+	// 不允许用户修改为0
+	if c.NewStatus.CanaryStatus.NextStepIndex == 0 {
+		c.NewStatus.CanaryStatus.NextStepIndex = util.NextBatchIndex(c.Rollout, c.Rollout.Status.CanaryStatus.CurrentStepIndex)
 	}
 	return r.canaryManager.runCanary(c)
 }
@@ -387,7 +400,17 @@ func (r *RolloutReconciler) recalculateCanaryStep(c *RolloutContext) (int32, err
 	}
 	currentReplicas, _ := intstr.GetScaledValueFromIntOrPercent(&batch.Spec.ReleasePlan.Batches[*batch.Spec.ReleasePlan.BatchPartition].CanaryReplicas, int(c.Workload.Replicas), true)
 	var stepIndex int32
-	for i := range c.Rollout.Spec.Strategy.Canary.Steps {
+	currentIndex := c.NewStatus.CanaryStatus.CurrentStepIndex - 1
+	steps := make([]int, 0)
+	steps = append(steps, int(currentIndex))
+	for i := 0; i < len(c.Rollout.Spec.Strategy.Canary.Steps); i++ {
+		if i == int(currentIndex) {
+			continue
+		}
+		steps = append(steps, i)
+	}
+
+	for _, i := range steps {
 		step := c.Rollout.Spec.Strategy.Canary.Steps[i]
 		var desiredReplicas int
 		desiredReplicas, _ = intstr.GetScaledValueFromIntOrPercent(step.Replicas, int(c.Workload.Replicas), true)
@@ -396,6 +419,7 @@ func (r *RolloutReconciler) recalculateCanaryStep(c *RolloutContext) (int32, err
 			break
 		}
 	}
+	klog.Infof("---zyb says: rollout(%s/%s) currentStepIndex %d, since RolloutPlan Changed, jumps to %d", c.Rollout.Namespace, c.Rollout.Name, currentIndex+1, stepIndex)
 	return stepIndex, nil
 }
 

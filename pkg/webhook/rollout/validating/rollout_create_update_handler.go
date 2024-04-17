@@ -264,8 +264,8 @@ func validateRolloutSpecCanarySteps(steps []appsv1beta1.CanaryStep, fldPath *fie
 		if s.Traffic != nil {
 			is := intstr.FromString(*s.Traffic)
 			weight, err := intstr.GetScaledValueFromIntOrPercent(&is, 100, true)
-			if err != nil || weight <= 0 || weight > 100 {
-				return field.ErrorList{field.Invalid(fldPath.Index(i).Child("steps"), steps, `traffic must be percentage with "0%" < traffic <= "100%"`)}
+			if err != nil || weight < 0 || weight > 100 {
+				return field.ErrorList{field.Invalid(fldPath.Index(i).Child("steps"), steps, `traffic must be percentage with "0%" <= traffic <= "100%"`)}
 			}
 		}
 	}

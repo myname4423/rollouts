@@ -962,6 +962,9 @@ spec:
                     type: string
                   message:
                     type: string
+                  nextStepIndex:
+                    format: int32
+                    type: integer
                   observedRolloutID:
                     description: ObservedRolloutID will record the newest spec.RolloutID
                       if status.canaryRevision equals to workload.updateRevision
@@ -985,6 +988,7 @@ spec:
                 - canaryReplicas
                 - canaryRevision
                 - currentStepState
+                - nextStepIndex
                 - podTemplateHash
                 type: object
               conditions:

@@ -131,6 +131,7 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1beta1.Rollout) (re
 				CanaryRevision:             workload.CanaryRevision,
 				StableRevision:             workload.StableRevision,
 				CurrentStepIndex:           int32(len(rollout.Spec.Strategy.Canary.Steps)),
+				NextStepIndex:              util.NextBatchIndex(rollout, int32(len(rollout.Spec.Strategy.Canary.Steps))),
 				CurrentStepState:           v1beta1.CanaryStepStateCompleted,
 				RolloutHash:                rollout.Annotations[util.RolloutHashAnnotation],
 			}
@@ -148,12 +149,13 @@ func (r *RolloutReconciler) calculateRolloutStatus(rollout *v1beta1.Rollout) (re
 // rolloutHash mainly records the step batch information, when the user step changes,
 // the current batch can be recalculated
 func (r *RolloutReconciler) calculateRolloutHash(rollout *v1beta1.Rollout) error {
+	//有些Rollout字段的修改会被webhook阻止
 	canary := rollout.Spec.Strategy.Canary.DeepCopy()
-	canary.FailureThreshold = nil
+	canary.FailureThreshold = nil //计算Hash不考虑FailureThreshold
 	canary.Steps = nil
 	for i := range rollout.Spec.Strategy.Canary.Steps {
 		step := rollout.Spec.Strategy.Canary.Steps[i].DeepCopy()
-		step.Pause = v1beta1.RolloutPause{}
+		step.Pause = v1beta1.RolloutPause{} //计算Hash不考虑Pause
 		canary.Steps = append(canary.Steps, *step)
 	}
 	data := util.DumpJSON(canary)

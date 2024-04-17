@@ -94,7 +94,7 @@ func (m *Manager) InitializeTrafficRouting(c *TrafficRoutingContext) error {
 	return trController.Initialize(context.TODO())
 }
 
-func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
+func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext, notWaitGraceTime bool) (bool, error) {
 	if len(c.ObjectRef) == 0 {
 		return true, nil
 	}
@@ -123,7 +123,7 @@ func (m *Manager) DoTrafficRouting(c *TrafficRoutingContext) (bool, error) {
 	canaryService.Namespace = stableService.Namespace
 	canaryService.Name = canaryServiceName
 
-	if c.LastUpdateTime != nil {
+	if c.LastUpdateTime != nil && !notWaitGraceTime {
 		// wait seconds for network providers to consume the modification about workload, service and so on.
 		if verifyTime := c.LastUpdateTime.Add(time.Second * time.Duration(trafficRouting.GracePeriodSeconds)); verifyTime.After(time.Now()) {
 			klog.Infof("%s update workload or service selector, and wait 3 seconds", c.Key)
@@ -240,7 +240,7 @@ func (m *Manager) FinalisingTrafficRouting(c *TrafficRoutingContext, onlyRestore
 	}
 
 	// First route 100% traffic to stable service
-	c.Strategy.Traffic = utilpointer.StringPtr("0%")
+	c.Strategy.Traffic = utilpointer.StringPtr("-1%")
 	verify, err = trController.EnsureRoutes(context.TODO(), &c.Strategy)
 	if err != nil {
 		return false, err

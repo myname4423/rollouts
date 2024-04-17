@@ -112,7 +112,7 @@ func (r *customController) EnsureRoutes(ctx context.Context, strategy *v1beta1.T
 	done := true
 	// *strategy.Weight == 0 indicates traffic routing is doing finalising and tries to route whole traffic to stable service
 	// then directly do finalising
-	if strategy.Traffic != nil && *strategy.Traffic == "0%" {
+	if strategy.Traffic != nil && *strategy.Traffic == "-1%" {
 		return true, nil
 	}
 	var err error

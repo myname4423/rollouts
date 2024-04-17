@@ -67,6 +67,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.StableRevision = "pod-template-hash-v1"
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.CurrentStepIndex = 1
+				s.CanaryStatus.NextStepIndex = 2
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
 				return s
 			},
@@ -99,6 +100,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.StableRevision = "pod-template-hash-v1"
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.CurrentStepIndex = 1
+				s.CanaryStatus.NextStepIndex = 2
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonInRolling
@@ -154,6 +156,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 1
+				s.CanaryStatus.NextStepIndex = 2
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonInRolling
@@ -210,6 +213,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 4
+				s.CanaryStatus.NextStepIndex = 0
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateCompleted
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonFinalising
@@ -268,6 +272,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 4
+				s.CanaryStatus.NextStepIndex = 0
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateCompleted
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonFinalising
@@ -328,6 +333,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 4
+				s.CanaryStatus.NextStepIndex = 0
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateCompleted
 				cond2 := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond2.Reason = v1alpha1.ProgressingReasonFinalising
@@ -377,6 +383,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "6f8cc56547"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 4
+				s.CanaryStatus.NextStepIndex = 0
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateCompleted
 				cond2 := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond2.Reason = v1alpha1.ProgressingReasonCompleted
@@ -439,6 +446,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "695c6d8498"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 1
+				s.CanaryStatus.NextStepIndex = 0
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonCancelling
@@ -496,6 +504,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.CanaryRevision = "695c6d8498"
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 1
+				s.CanaryStatus.NextStepIndex = 0
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonCancelling
@@ -669,6 +678,7 @@ func TestReCalculateCanaryStepIndex(t *testing.T) {
 						Replicas: &intstr.IntOrString{Type: intstr.String, StrVal: "100%"},
 					},
 				}
+				obj.Status.CanaryStatus.CurrentStepIndex = 1
 				return obj
 			},
 			getBatchRelease: func() *v1beta1.BatchRelease {
@@ -708,6 +718,7 @@ func TestReCalculateCanaryStepIndex(t *testing.T) {
 						Replicas: &intstr.IntOrString{Type: intstr.String, StrVal: "100%"},
 					},
 				}
+				obj.Status.CanaryStatus.CurrentStepIndex = 1
 				return obj
 			},
 			getBatchRelease: func() *v1beta1.BatchRelease {
@@ -747,6 +758,7 @@ func TestReCalculateCanaryStepIndex(t *testing.T) {
 						Replicas: &intstr.IntOrString{Type: intstr.String, StrVal: "100%"},
 					},
 				}
+				obj.Status.CanaryStatus.CurrentStepIndex = 1
 				return obj
 			},
 			getBatchRelease: func() *v1beta1.BatchRelease {
@@ -786,6 +798,7 @@ func TestReCalculateCanaryStepIndex(t *testing.T) {
 						Replicas: &intstr.IntOrString{Type: intstr.String, StrVal: "100%"},
 					},
 				}
+				obj.Status.CanaryStatus.CurrentStepIndex = 1
 				return obj
 			},
 			getBatchRelease: func() *v1beta1.BatchRelease {
@@ -834,6 +847,7 @@ func TestReCalculateCanaryStepIndex(t *testing.T) {
 						},
 					},
 				}
+				obj.Status.CanaryStatus.CurrentStepIndex = 1
 				return obj
 			},
 			getBatchRelease: func() *v1beta1.BatchRelease {
@@ -879,7 +893,7 @@ func TestReCalculateCanaryStepIndex(t *testing.T) {
 			if err != nil {
 				t.Fatalf(err.Error())
 			}
-			c := &RolloutContext{Rollout: rollout, Workload: workload}
+			c := &RolloutContext{Rollout: rollout, Workload: workload, NewStatus: &rollout.Status}
 			newStepIndex, err := reconciler.recalculateCanaryStep(c)
 			if err != nil {
 				t.Fatalf(err.Error())

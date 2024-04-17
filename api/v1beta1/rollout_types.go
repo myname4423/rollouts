@@ -256,6 +256,7 @@ type CanaryStatus struct {
 	// controller will execute the rollout.
 	// +optional
 	CurrentStepIndex int32           `json:"currentStepIndex"`
+	NextStepIndex    int32           `json:"nextStepIndex"`
 	CurrentStepState CanaryStepState `json:"currentStepState"`
 	Message          string          `json:"message,omitempty"`
 	LastUpdateTime   *metav1.Time    `json:"lastUpdateTime,omitempty"`
@@ -264,12 +265,13 @@ type CanaryStatus struct {
 type CanaryStepState string
 
 const (
-	CanaryStepStateUpgrade         CanaryStepState = "StepUpgrade"
-	CanaryStepStateTrafficRouting  CanaryStepState = "StepTrafficRouting"
-	CanaryStepStateMetricsAnalysis CanaryStepState = "StepMetricsAnalysis"
-	CanaryStepStatePaused          CanaryStepState = "StepPaused"
-	CanaryStepStateReady           CanaryStepState = "StepReady"
-	CanaryStepStateCompleted       CanaryStepState = "Completed"
+	CanaryStepStateUpgrade              CanaryStepState = "StepUpgrade"
+	CanaryStepStateTrafficRouting       CanaryStepState = "StepTrafficRouting"
+	CanaryStepStateBeforeTrafficRouting CanaryStepState = "BeforeTrafficRouting"
+	CanaryStepStateMetricsAnalysis      CanaryStepState = "StepMetricsAnalysis"
+	CanaryStepStatePaused               CanaryStepState = "StepPaused"
+	CanaryStepStateReady                CanaryStepState = "StepReady"
+	CanaryStepStateCompleted            CanaryStepState = "Completed"
 )
 
 // RolloutPhase are a set of phases that this rollout

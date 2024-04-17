@@ -717,7 +717,7 @@ func TestDoTrafficRouting(t *testing.T) {
 			if err != nil {
 				t.Fatalf("InitializeTrafficRouting failed: %s", err)
 			}
-			done, err := manager.DoTrafficRouting(c)
+			done, err := manager.DoTrafficRouting(c, false)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}
@@ -893,12 +893,12 @@ func TestDoTrafficRoutingWithIstio(t *testing.T) {
 			if err != nil {
 				t.Fatalf("InitializeTrafficRouting failed: %s", err)
 			}
-			_, err = manager.DoTrafficRouting(c)
+			_, err = manager.DoTrafficRouting(c, false)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}
 			// may return false due to in the course of doing trafficRouting, let's do it again
-			done, err := manager.DoTrafficRouting(c)
+			done, err := manager.DoTrafficRouting(c, false)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}
