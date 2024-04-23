@@ -101,7 +101,7 @@ spec:
                   finalizingPolicy:
                     description: FinalizingPolicy define the behavior of controller
                       when phase enter Finalizing Defaults to "Immediate"
-                    type: string
+                    type: integer
                   patchPodTemplateMetadata:
                     description: PatchPodTemplateMetadata indicates patch configuration(e.g.
                       labels, annotations) to the canary deployment podTemplateSpec.metadata
@@ -365,7 +365,7 @@ spec:
                   finalizingPolicy:
                     description: FinalizingPolicy define the behavior of controller
                       when phase enter Finalizing Defaults to "Immediate"
-                    type: string
+                    type: integer
                   patchPodTemplateMetadata:
                     description: PatchPodTemplateMetadata indicates patch configuration(e.g.
                       labels, annotations) to the canary deployment podTemplateSpec.metadata

@@ -245,13 +245,15 @@ type CanaryStatus struct {
 	// CurrentStepIndex defines the current step of the rollout is on. If the current step index is null, the
 	// controller will execute the rollout.
 	// +optional
-	CurrentStepIndex int32           `json:"currentStepIndex"`
-	CurrentStepState CanaryStepState `json:"currentStepState"`
-	Message          string          `json:"message,omitempty"`
-	LastUpdateTime   *metav1.Time    `json:"lastUpdateTime,omitempty"`
+	CurrentStepIndex int32             `json:"currentStepIndex"`
+	CurrentStepState CanaryStepState   `json:"currentStepState"`
+	Message          string            `json:"message,omitempty"`
+	LastUpdateTime   *metav1.Time      `json:"lastUpdateTime,omitempty"`
+	FinalisingStep   FinalizeStateType `json:"finalisingStep"`
 }
 
 type CanaryStepState string
+type FinalizeStateType string
 
 const (
 	CanaryStepStateUpgrade         CanaryStepState = "StepUpgrade"

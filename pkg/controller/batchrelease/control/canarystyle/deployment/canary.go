@@ -24,6 +24,7 @@ import (
 
 	"github.com/openkruise/rollouts/api/v1beta1"
 	batchcontext "github.com/openkruise/rollouts/pkg/controller/batchrelease/context"
+	"github.com/openkruise/rollouts/pkg/controller/batchrelease/control"
 	"github.com/openkruise/rollouts/pkg/util"
 	utilclient "github.com/openkruise/rollouts/pkg/util/client"
 	expectations "github.com/openkruise/rollouts/pkg/util/expectation"
@@ -70,6 +71,16 @@ func (r *realCanaryController) Delete(release *v1beta1.BatchRelease) error {
 			return err
 		}
 		klog.Infof("Successfully remove finalizers for Deplot %v", klog.KObj(d))
+		if control.ShouldScaleDown(release) {
+			// Patch replicas to zero to sacle down the canary pods
+			body := []byte(`{"spec":{"replicas":0}}`)
+			if err = r.canaryClient.Patch(context.TODO(), d, client.RawPatch(types.MergePatchType, body)); err != nil {
+				return err
+			}
+			klog.Infof("Successfully scale down for Deplot %v", klog.KObj(d))
+		}
+		klog.Infof("Decide NOT to scale down for Deplot %v", klog.KObj(d))
+
 	}
 	return nil
 }

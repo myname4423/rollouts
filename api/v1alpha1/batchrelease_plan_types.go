@@ -56,15 +56,16 @@ type ReleasePlan struct {
 	PatchPodTemplateMetadata *PatchPodTemplateMetadata `json:"patchPodTemplateMetadata,omitempty"`
 }
 
-type FinalizingPolicyType string
+type FinalizingPolicyType uint16
 
 const (
 	// WaitResumeFinalizingPolicyType will wait workload to be resumed, which means
 	// controller will be hold at Finalizing phase util all pods of workload is upgraded.
 	// WaitResumeFinalizingPolicyType only works in canary-style BatchRelease controller.
-	WaitResumeFinalizingPolicyType FinalizingPolicyType = "WaitResume"
-	// ImmediateFinalizingPolicyType will not to wait workload to be resumed.
-	ImmediateFinalizingPolicyType FinalizingPolicyType = "Immediate"
+	// In default, will not to wait workload to be resumed.
+	WaitResumeFinalizingPolicyType FinalizingPolicyType = 1 << iota
+	// In default, will not scale down the canary
+	ScaleDownFinalizingPolicyType
 )
 
 // ReleaseBatch is used to describe how each batch release should be

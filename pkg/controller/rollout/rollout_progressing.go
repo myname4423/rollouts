@@ -45,6 +45,8 @@ type RolloutContext struct {
 	RecheckTime *time.Time
 	// wait stable workload pods ready
 	WaitReady bool
+	// finalising reason
+	FinalizeReason string
 }
 
 // parameter1 retryReconcile, parameter2 error
@@ -75,7 +77,7 @@ func (r *RolloutReconciler) reconcileRolloutProgressing(rollout *v1beta1.Rollout
 			CanaryRevision:             rolloutContext.Workload.CanaryRevision,
 			CurrentStepIndex:           1,
 			NextStepIndex:              util.NextBatchIndex(rollout, 1),
-			CurrentStepState:           v1beta1.CanaryStepStateUpgrade,
+			CurrentStepState:           v1beta1.CanaryStepStateInit,
 			LastUpdateTime:             &metav1.Time{Time: time.Now()},
 		}
 		done, err := r.doProgressingInitializing(rolloutContext)
@@ -102,6 +104,7 @@ func (r *RolloutReconciler) reconcileRolloutProgressing(rollout *v1beta1.Rollout
 		klog.Infof("rollout(%s/%s) is Progressing, and in reason(%s)", rollout.Namespace, rollout.Name, cond.Reason)
 		var done bool
 		rolloutContext.WaitReady = true
+		rolloutContext.FinalizeReason = v1beta1.FinaliseReasonSuccess
 		done, err = r.doFinalising(rolloutContext)
 		if err != nil {
 			return nil, err
@@ -126,6 +129,7 @@ func (r *RolloutReconciler) reconcileRolloutProgressing(rollout *v1beta1.Rollout
 	case v1alpha1.ProgressingReasonCancelling:
 		klog.Infof("rollout(%s/%s) is Progressing, and in reason(%s)", rollout.Namespace, rollout.Name, cond.Reason)
 		var done bool
+		rolloutContext.FinalizeReason = v1beta1.FinaliseReasonRollback
 		done, err = r.doFinalising(rolloutContext)
 		if err != nil {
 			return nil, err
@@ -242,7 +246,7 @@ func (r *RolloutReconciler) handleRollbackInBatches(rollout *v1beta1.Rollout, wo
 	newStatus.CanaryStatus.CurrentStepIndex = 1
 	newStatus.CanaryStatus.NextStepIndex = util.NextBatchIndex(rollout, 1)
 	newStatus.CanaryStatus.CanaryRevision = workload.CanaryRevision
-	newStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateUpgrade
+	newStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateInit
 	newStatus.CanaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
 	newStatus.CanaryStatus.RolloutHash = rollout.Annotations[util.RolloutHashAnnotation]
 	klog.Infof("rollout(%s/%s) workload has been rollback in batches, then restart from beginning", rollout.Namespace, rollout.Name)
@@ -375,18 +379,28 @@ func (r *RolloutReconciler) doProgressingReset(c *RolloutContext) (bool, error) 
 	if len(c.Rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
 		// modify network api(ingress or gateway api) configuration, and route 100% traffic to stable pods
 		tr := newTrafficRoutingContext(c)
-		done, err := r.trafficRoutingManager.FinalisingTrafficRouting(tr, false)
-		c.NewStatus.CanaryStatus.LastUpdateTime = tr.LastUpdateTime
+		done, err := r.trafficRoutingManager.PrepareFinalisingTrafficRouting(tr, v1beta1.FinaliseReasonContinuous)
 		if err != nil || !done {
+			c.NewStatus.CanaryStatus.LastUpdateTime = tr.LastUpdateTime
 			return done, err
 		}
 	}
+
 	done, err := r.canaryManager.removeBatchRelease(c)
 	if err != nil {
 		klog.Errorf("rollout(%s/%s) DoFinalising batchRelease failed: %s", c.Rollout.Namespace, c.Rollout.Name, err.Error())
 		return false, err
 	} else if !done {
 		return false, nil
+	}
+
+	if len(c.Rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
+		tr := newTrafficRoutingContext(c)
+		done, err = r.trafficRoutingManager.FinalisingTrafficRouting(tr)
+		c.NewStatus.CanaryStatus.LastUpdateTime = tr.LastUpdateTime
+		if err != nil || !done {
+			return done, err
+		}
 	}
 	return true, nil
 }

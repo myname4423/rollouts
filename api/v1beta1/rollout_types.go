@@ -231,6 +231,14 @@ const (
 	// Terminating Reason
 	TerminatingReasonInTerminating = "InTerminating"
 	TerminatingReasonCompleted     = "Completed"
+
+	//
+	FinaliseReasonSuccess    = "Success"
+	FinaliseReasonRollback   = "Rollback"
+	FinaliseReasonContinuous = "Continuous"
+	FinaliseReasonStepClear  = "StepClear"
+	FinaliseReasonDisalbed   = "RolloutDisabled"
+	FinaliseReasonDelete     = "RolloutDeleting"
 )
 
 // CanaryStatus status fields that only pertain to the canary rollout
@@ -255,16 +263,18 @@ type CanaryStatus struct {
 	// CurrentStepIndex defines the current step of the rollout is on. If the current step index is null, the
 	// controller will execute the rollout.
 	// +optional
-	CurrentStepIndex int32           `json:"currentStepIndex"`
-	NextStepIndex    int32           `json:"nextStepIndex"`
-	CurrentStepState CanaryStepState `json:"currentStepState"`
-	Message          string          `json:"message,omitempty"`
-	LastUpdateTime   *metav1.Time    `json:"lastUpdateTime,omitempty"`
+	CurrentStepIndex int32              `json:"currentStepIndex"`
+	NextStepIndex    int32              `json:"nextStepIndex"`
+	CurrentStepState CanaryStepState    `json:"currentStepState"`
+	Message          string             `json:"message,omitempty"`
+	LastUpdateTime   *metav1.Time       `json:"lastUpdateTime,omitempty"`
+	FinalisingStep   FinalisingStepType `json:"finalisingStep"`
 }
 
 type CanaryStepState string
 
 const (
+	CanaryStepStateInit                 CanaryStepState = "BeforeStepUpgrade"
 	CanaryStepStateUpgrade              CanaryStepState = "StepUpgrade"
 	CanaryStepStateTrafficRouting       CanaryStepState = "StepTrafficRouting"
 	CanaryStepStateBeforeTrafficRouting CanaryStepState = "BeforeTrafficRouting"
@@ -290,6 +300,17 @@ const (
 	RolloutPhaseDisabled RolloutPhase = "Disabled"
 	// RolloutPhaseDisabling indicates a rollout is disabling and releasing resources
 	RolloutPhaseDisabling RolloutPhase = "Disabling"
+)
+
+type FinalisingStepType string
+
+const (
+	FinalisingStepTypePreparing     FinalisingStepType = "Preparing"
+	FinalisingStepTypeBatchRelease  FinalisingStepType = "PatchBatchRelease"
+	FinalisingStepTypeStableService FinalisingStepType = "RestoreStableService"
+	FinalisingStepTypeConf          FinalisingStepType = "RestoreConf"
+	FinalisingStepTypeCanaryService FinalisingStepType = "DeleteCanayService"
+	FinalisingStepTypeDeleteBR      FinalisingStepType = "DeleteBatchRelease"
 )
 
 // +genclient

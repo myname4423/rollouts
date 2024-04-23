@@ -103,7 +103,12 @@ func GenerateNotFoundError(name, resource string) error {
 
 // ShouldWaitResume return true if FinalizingPolicy is "waitResume".
 func ShouldWaitResume(release *v1beta1.BatchRelease) bool {
-	return release.Spec.ReleasePlan.FinalizingPolicy == v1beta1.WaitResumeFinalizingPolicyType
+	return release.Spec.ReleasePlan.FinalizingPolicy&v1beta1.WaitResumeFinalizingPolicyType != 0
+}
+
+// ShouldWaitResume return true if FinalizingPolicy is "waitResume".
+func ShouldScaleDown(release *v1beta1.BatchRelease) bool {
+	return release.Spec.ReleasePlan.FinalizingPolicy&v1beta1.ScaleDownFinalizingPolicyType != 0
 }
 
 // IsCurrentMoreThanOrEqualToDesired return true if current >= desired

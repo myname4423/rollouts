@@ -717,7 +717,7 @@ func TestDoTrafficRouting(t *testing.T) {
 			if err != nil {
 				t.Fatalf("InitializeTrafficRouting failed: %s", err)
 			}
-			done, err := manager.DoTrafficRouting(c, false)
+			done, err := manager.DoTrafficRouting(c)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}
@@ -893,12 +893,12 @@ func TestDoTrafficRoutingWithIstio(t *testing.T) {
 			if err != nil {
 				t.Fatalf("InitializeTrafficRouting failed: %s", err)
 			}
-			_, err = manager.DoTrafficRouting(c, false)
+			_, err = manager.DoTrafficRouting(c)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}
 			// may return false due to in the course of doing trafficRouting, let's do it again
-			done, err := manager.DoTrafficRouting(c, false)
+			done, err := manager.DoTrafficRouting(c)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}
@@ -1132,7 +1132,7 @@ func TestFinalisingTrafficRouting(t *testing.T) {
 				LastUpdateTime:   newStatus.CanaryStatus.LastUpdateTime,
 			}
 			manager := NewTrafficRoutingManager(client)
-			done, err := manager.FinalisingTrafficRouting(c, cs.onlyRestoreStableService)
+			done, err := manager.FinalisingTrafficRouting(c)
 			if err != nil {
 				t.Fatalf("DoTrafficRouting failed: %s", err)
 			}

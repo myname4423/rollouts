@@ -175,3 +175,24 @@ func NextBatchIndex(rollout *rolloutv1beta1.Rollout, CurrentStepIndex int32) int
 	}
 	return CurrentStepIndex + 1
 }
+
+func IsBlueGreenStrategy(rollout *rolloutv1beta1.Rollout) bool {
+	if rollout == nil {
+		return false
+	}
+	return true
+}
+
+func IsCanaryStrategy(rollout *rolloutv1beta1.Rollout) bool {
+	if rollout == nil {
+		return false
+	}
+	return rollout.Spec.Strategy.Canary.EnableExtraWorkloadForCanary
+}
+
+func IsBatchStrategy(rollout *rolloutv1beta1.Rollout) bool {
+	if rollout == nil {
+		return false
+	}
+	return !rollout.Spec.Strategy.Canary.EnableExtraWorkloadForCanary
+}
