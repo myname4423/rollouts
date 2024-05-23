@@ -28,6 +28,7 @@ const (
 	BatchReleaseControlAnnotation = "batchrelease.rollouts.kruise.io/control-info"
 	// InRolloutProgressingAnnotation marks workload as entering the rollout progressing process
 	//and does not allow paused=false during this process
+	//TODO - 修改注释 蓝绿允许paused为false
 	InRolloutProgressingAnnotation = "rollouts.kruise.io/in-progressing"
 	// RolloutHashAnnotation record observed rollout spec hash
 	RolloutHashAnnotation = "rollouts.kruise.io/hash"

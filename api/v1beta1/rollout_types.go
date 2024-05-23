@@ -75,6 +75,116 @@ type RolloutStrategy struct {
 	Paused bool `json:"paused,omitempty"`
 	// +optional
 	Canary *CanaryStrategy `json:"canary,omitempty"`
+	// +optional
+	BlueGreen *BlueGreenStrategy `json:"blueGreen,omitempty" protobuf:"bytes,1,opt,name=blueGreen"`
+}
+
+func (r *RolloutStrategy) GetRollingStyle() RollingStyleType {
+	if r.BlueGreen == nil && r.Canary == nil {
+		return EmptyRollingStyle
+	}
+	if r.BlueGreen != nil {
+		return BlueGreenRollingStyle
+	}
+	if r.Canary.EnableExtraWorkloadForCanary {
+		return CanaryRollingStyle
+	}
+	return PartitionRollingStyle
+}
+
+// r.GetRollingStyle() == BlueGreenRollingStyle
+func (r *RolloutStrategy) IsBlueGreenRelease() bool {
+	return r.GetRollingStyle() == BlueGreenRollingStyle
+}
+
+// r.GetRollingStyle() == CanaryRollingStyle
+func (r *RolloutStrategy) IsCanaryRelease() bool {
+	return r.GetRollingStyle() == CanaryRollingStyle
+}
+
+// r.GetRollingStyle() == PartitionRollingStyle
+func (r *RolloutStrategy) IsPartitionRelease() bool {
+	return r.GetRollingStyle() == PartitionRollingStyle
+}
+
+// r.GetRollingStyle() == BlueGreenRollingStyle
+func (r *RolloutStrategy) IsBlueGreenStragegy() bool {
+	return r.IsBlueGreenRelease()
+}
+
+// r.GetRollingStyle() == CanaryRollingStyle || r.GetRollingStyle() == PartitionRollingStyle
+func (r *RolloutStrategy) IsCanaryStragegy() bool {
+	return r.IsCanaryRelease() || r.IsPartitionRelease()
+}
+
+// r.GetRollingStyle() == EmptyRollingStyle
+func (r *RolloutStrategy) IsEmptyRelease() bool {
+	return r.GetRollingStyle() == EmptyRollingStyle
+}
+
+func (r *RolloutStrategy) GetSteps() []CanaryStep {
+	switch r.GetRollingStyle() {
+	case BlueGreenRollingStyle:
+		return r.BlueGreen.Steps
+	case CanaryRollingStyle, PartitionRollingStyle:
+		return r.Canary.Steps
+	default:
+		return nil
+	}
+}
+
+func (r *RolloutStrategy) GetTrafficRouting() []TrafficRoutingRef {
+	switch r.GetRollingStyle() {
+	case BlueGreenRollingStyle:
+		return r.BlueGreen.TrafficRoutings
+	case CanaryRollingStyle, PartitionRollingStyle:
+		return r.Canary.TrafficRoutings
+	default:
+		return nil
+	}
+}
+
+func (r *RolloutStrategy) HasTrafficRoutings() bool {
+	return len(r.GetTrafficRouting()) > 0
+}
+
+func (r *RolloutStrategy) DisableGenerateCanaryService() bool {
+	switch r.GetRollingStyle() {
+	case BlueGreenRollingStyle:
+		return r.BlueGreen.DisableGenerateCanaryService
+	case CanaryRollingStyle, PartitionRollingStyle:
+		return r.Canary.DisableGenerateCanaryService
+	default:
+		return false
+	}
+}
+
+// func (r *RolloutStrategy) GetTrafficRoutingRef() string {
+// }
+// func (r *RolloutStrategy) GetFailureThreshold() *intstr.IntOrString {
+// }
+// func (r *RolloutStrategy) GetDisableGenerateCanaryService() bool {
+
+// }
+
+// BlueGreenStrategy defines parameters for Blue Green deployment
+type BlueGreenStrategy struct {
+	// Steps define the order of phases to execute release in batches(20%, 40%, 60%, 80%, 100%)
+	// +optional
+	Steps []CanaryStep `json:"steps,omitempty"`
+	// TrafficRoutings support ingress, gateway api and custom network resource(e.g. istio, apisix) to enable more fine-grained traffic routing
+	// and current only support one TrafficRouting
+	TrafficRoutings []TrafficRoutingRef `json:"trafficRoutings,omitempty"`
+	// FailureThreshold indicates how many failed pods can be tolerated in all upgraded pods.
+	// Only when FailureThreshold are satisfied, Rollout can enter ready state.
+	// If FailureThreshold is nil, Rollout will use the MaxUnavailable of workload as its
+	// FailureThreshold.
+	// Defaults to nil.
+	FailureThreshold *intstr.IntOrString `json:"failureThreshold,omitempty"`
+	// TrafficRoutingRef is TrafficRouting's Name
+	TrafficRoutingRef string `json:"trafficRoutingRef,omitempty"`
+	// canary service will not be generated if DisableGenerateCanaryService is true
+	DisableGenerateCanaryService bool `json:"disableGenerateCanaryService,omitempty"`
 }
 
 // CanaryStrategy defines parameters for a Replica Based Canary
@@ -178,6 +288,9 @@ type RolloutStatus struct {
 	// Canary describes the state of the canary rollout
 	// +optional
 	CanaryStatus *CanaryStatus `json:"canaryStatus,omitempty"`
+	// BlueGreen describes the state of the blueGreen rollout
+	// +optional
+	BlueGreenStatus *BlueGreenStatus `json:"blueGreenStatus,omitempty"`
 	// Conditions a list of conditions a rollout can have.
 	// +optional
 	Conditions []RolloutCondition `json:"conditions,omitempty"`
@@ -241,8 +354,12 @@ const (
 	FinaliseReasonDelete     = "RolloutDeleting"
 )
 
-// CanaryStatus status fields that only pertain to the canary rollout
-type CanaryStatus struct {
+// fields in CommonStatus are shared between canary status and bluegreen status
+// if a field is accessed in strategy-agnostic way, like accessed from rollout_progressing.go, or rollout_status.go
+// then it can be put into CommonStatus
+// if a field is only accessed in strategy-specific way, like access from rollout_canary.go or rollout_bluegreen.go
+// then it should stay behind with CanaryStatus or BlueGreenStatus
+type CommonStatus struct {
 	// observedWorkloadGeneration is the most recent generation observed for this Rollout ref workload generation.
 	ObservedWorkloadGeneration int64 `json:"observedWorkloadGeneration,omitempty"`
 	// ObservedRolloutID will record the newest spec.RolloutID if status.canaryRevision equals to workload.updateRevision
@@ -251,24 +368,108 @@ type CanaryStatus struct {
 	RolloutHash string `json:"rolloutHash,omitempty"`
 	// StableRevision indicates the revision of stable pods
 	StableRevision string `json:"stableRevision,omitempty"`
+	// pod template hash is used as service selector label
+	PodTemplateHash string `json:"podTemplateHash"`
+	// CurrentStepIndex defines the current step of the rollout is on. If the current step index is null, the
+	// controller will execute the rollout.
+	// +optional
+	CurrentStepIndex int32           `json:"currentStepIndex"`
+	NextStepIndex    int32           `json:"nextStepIndex"`
+	CurrentStepState CanaryStepState `json:"currentStepState"`
+	Message          string          `json:"message,omitempty"`
+	LastUpdateTime   *metav1.Time    `json:"lastUpdateTime,omitempty"`
+}
+
+// CanaryStatus status fields that only pertain to the canary rollout
+type CanaryStatus struct {
+	CommonStatus `json:",inline"`
 	// CanaryRevision is calculated by rollout based on podTemplateHash, and the internal logic flow uses
 	// It may be different from rs podTemplateHash in different k8s versions, so it cannot be used as service selector label
 	CanaryRevision string `json:"canaryRevision"`
-	// pod template hash is used as service selector label
-	PodTemplateHash string `json:"podTemplateHash"`
 	// CanaryReplicas the numbers of canary revision pods
 	CanaryReplicas int32 `json:"canaryReplicas"`
 	// CanaryReadyReplicas the numbers of ready canary revision pods
 	CanaryReadyReplicas int32 `json:"canaryReadyReplicas"`
-	// CurrentStepIndex defines the current step of the rollout is on. If the current step index is null, the
-	// controller will execute the rollout.
-	// +optional
-	CurrentStepIndex int32              `json:"currentStepIndex"`
-	NextStepIndex    int32              `json:"nextStepIndex"`
-	CurrentStepState CanaryStepState    `json:"currentStepState"`
-	Message          string             `json:"message,omitempty"`
-	LastUpdateTime   *metav1.Time       `json:"lastUpdateTime,omitempty"`
-	FinalisingStep   FinalisingStepType `json:"finalisingStep"`
+	// FinalisingStep the step of finalising
+	FinalisingStep FinalisingStepType `json:"finalisingStep"`
+}
+
+// BlueGreenStatus status fields that only pertain to the blueGreen rollout
+type BlueGreenStatus struct {
+	CommonStatus `json:",inline"`
+	// CanaryRevision is calculated by rollout based on podTemplateHash, and the internal logic flow uses
+	// It may be different from rs podTemplateHash in different k8s versions, so it cannot be used as service selector label
+	CanaryRevision string `json:"updatedRevision"`
+	// CanaryReplicas the numbers of canary revision pods
+	CanaryReplicas int32 `json:"updatedReplicas"`
+	// CanaryReadyReplicas the numbers of ready canary revision pods
+	CanaryReadyReplicas int32 `json:"updatedReadyReplicas"`
+	// FinalisingStep the step of finalising
+	FinalisingStep FinalisingStepType `json:"finalisingStep"`
+}
+
+func (r *RolloutStatus) GetSubStatus() *CommonStatus {
+	if r.CanaryStatus != nil {
+		return &(r.CanaryStatus.CommonStatus)
+	}
+	return &(r.BlueGreenStatus.CommonStatus)
+}
+
+func (r *RolloutStatus) IsSubStatusEmpty() bool {
+	return r.CanaryStatus == nil && r.BlueGreenStatus == nil
+}
+
+func (r *RolloutStatus) Clear() {
+	r.CanaryStatus = nil
+	r.BlueGreenStatus = nil
+}
+
+func (r *RolloutStatus) GetCanaryRevision() string {
+	if r.CanaryStatus != nil {
+		return r.CanaryStatus.CanaryRevision
+	}
+	return r.BlueGreenStatus.CanaryRevision
+}
+
+func (r *RolloutStatus) SetCanaryRevision(revision string) {
+	if r.CanaryStatus != nil {
+		r.CanaryStatus.CanaryRevision = revision
+	}
+	if r.BlueGreenStatus != nil {
+		r.BlueGreenStatus.CanaryRevision = revision
+	}
+}
+
+func (r *RolloutStatus) GetCanaryReplicas() int32 {
+	if r.CanaryStatus != nil {
+		return r.CanaryStatus.CanaryReplicas
+	}
+	return r.BlueGreenStatus.CanaryReplicas
+}
+
+func (r *RolloutStatus) SetCanaryReplicas(replicas int32) {
+	if r.CanaryStatus != nil {
+		r.CanaryStatus.CanaryReplicas = replicas
+	}
+	if r.BlueGreenStatus != nil {
+		r.BlueGreenStatus.CanaryReplicas = replicas
+	}
+}
+
+func (r *RolloutStatus) GetCanaryReadyReplicas() int32 {
+	if r.CanaryStatus != nil {
+		return r.CanaryStatus.CanaryReadyReplicas
+	}
+	return r.BlueGreenStatus.CanaryReadyReplicas
+}
+
+func (r *RolloutStatus) SetCanaryReadyReplicas(replicas int32) {
+	if r.CanaryStatus != nil {
+		r.CanaryStatus.CanaryReadyReplicas = replicas
+	}
+	if r.BlueGreenStatus != nil {
+		r.BlueGreenStatus.CanaryReadyReplicas = replicas
+	}
 }
 
 type CanaryStepState string

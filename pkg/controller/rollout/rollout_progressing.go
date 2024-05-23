@@ -68,18 +68,39 @@ func (r *RolloutReconciler) reconcileRolloutProgressing(rollout *v1beta1.Rollout
 	switch cond.Reason {
 	case v1alpha1.ProgressingReasonInitializing:
 		klog.Infof("rollout(%s/%s) is Progressing, and in reason(%s)", rollout.Namespace, rollout.Name, cond.Reason)
-		// new canaryStatus
-		newStatus.CanaryStatus = &v1beta1.CanaryStatus{
-			ObservedWorkloadGeneration: rolloutContext.Workload.Generation,
-			RolloutHash:                rolloutContext.Rollout.Annotations[util.RolloutHashAnnotation],
-			ObservedRolloutID:          getRolloutID(rolloutContext.Workload),
-			StableRevision:             rolloutContext.Workload.StableRevision,
-			CanaryRevision:             rolloutContext.Workload.CanaryRevision,
-			CurrentStepIndex:           1,
-			NextStepIndex:              util.NextBatchIndex(rollout, 1),
-			CurrentStepState:           v1beta1.CanaryStepStateInit,
-			LastUpdateTime:             &metav1.Time{Time: time.Now()},
+		// clear and create
+		// 这里没有PodTemplateHash，会在后面赋值
+		newStatus.Clear()
+		if rollout.Spec.Strategy.IsBlueGreenRelease() {
+			newStatus.BlueGreenStatus = &v1beta1.BlueGreenStatus{
+				CommonStatus: v1beta1.CommonStatus{
+					ObservedWorkloadGeneration: rolloutContext.Workload.Generation,
+					RolloutHash:                rolloutContext.Rollout.Annotations[util.RolloutHashAnnotation],
+					ObservedRolloutID:          getRolloutID(rolloutContext.Workload),
+					StableRevision:             rolloutContext.Workload.StableRevision,
+					CurrentStepIndex:           1,
+					NextStepIndex:              util.NextBatchIndex(rollout, 1),
+					CurrentStepState:           v1beta1.CanaryStepStateInit,
+					LastUpdateTime:             &metav1.Time{Time: time.Now()},
+				},
+				CanaryRevision: rolloutContext.Workload.CanaryRevision,
+			}
+		} else {
+			newStatus.CanaryStatus = &v1beta1.CanaryStatus{
+				CommonStatus: v1beta1.CommonStatus{
+					ObservedWorkloadGeneration: rolloutContext.Workload.Generation,
+					RolloutHash:                rolloutContext.Rollout.Annotations[util.RolloutHashAnnotation],
+					ObservedRolloutID:          getRolloutID(rolloutContext.Workload),
+					StableRevision:             rolloutContext.Workload.StableRevision,
+					CurrentStepIndex:           1,
+					NextStepIndex:              util.NextBatchIndex(rollout, 1),
+					CurrentStepState:           v1beta1.CanaryStepStateInit,
+					LastUpdateTime:             &metav1.Time{Time: time.Now()},
+				},
+				CanaryRevision: rolloutContext.Workload.CanaryRevision,
+			}
 		}
+
 		done, err := r.doProgressingInitializing(rolloutContext)
 		if err != nil {
 			klog.Errorf("rollout(%s/%s) doProgressingInitializing error(%s)", rollout.Namespace, rollout.Name, err.Error())
@@ -155,7 +176,7 @@ func (r *RolloutReconciler) reconcileRolloutProgressing(rollout *v1beta1.Rollout
 
 func (r *RolloutReconciler) doProgressingInitializing(c *RolloutContext) (bool, error) {
 	// Traffic routing
-	if len(c.Rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
+	if c.Rollout.Spec.Strategy.HasTrafficRoutings() {
 		if err := r.trafficRoutingManager.InitializeTrafficRouting(newTrafficRoutingContext(c)); err != nil {
 			return false, err
 		}
@@ -214,14 +235,15 @@ func (r *RolloutReconciler) handleRolloutPaused(rollout *v1beta1.Rollout, newSta
 func (r *RolloutReconciler) handleContinuousRelease(c *RolloutContext) error {
 	r.Recorder.Eventf(c.Rollout, corev1.EventTypeNormal, "Progressing", "workload continuous publishing canaryRevision, then restart publishing")
 	klog.Infof("rollout(%s/%s) workload continuous publishing canaryRevision from(%s) -> to(%s), then restart publishing",
-		c.Rollout.Namespace, c.Rollout.Name, c.NewStatus.CanaryStatus.CanaryRevision, c.Workload.CanaryRevision)
+		c.Rollout.Namespace, c.Rollout.Name, c.NewStatus.GetCanaryRevision(), c.Workload.CanaryRevision)
 
 	done, err := r.doProgressingReset(c)
 	if err != nil {
 		klog.Errorf("rollout(%s/%s) doProgressingReset failed: %s", c.Rollout.Namespace, c.Rollout.Name, err.Error())
 		return err
 	} else if done {
-		c.NewStatus.CanaryStatus = nil
+		// 清空了SubStatus
+		c.NewStatus.Clear()
 		progressingStateTransition(c.NewStatus, corev1.ConditionTrue, v1alpha1.ProgressingReasonInitializing, "Workload is continuous release")
 		klog.Infof("rollout(%s/%s) workload is continuous publishing, reset complete", c.Rollout.Namespace, c.Rollout.Name)
 	} else {
@@ -234,7 +256,7 @@ func (r *RolloutReconciler) handleContinuousRelease(c *RolloutContext) error {
 }
 
 func (r *RolloutReconciler) handleRollbackDirectly(rollout *v1beta1.Rollout, workload *util.Workload, newStatus *v1beta1.RolloutStatus) error {
-	newStatus.CanaryStatus.CanaryRevision = workload.CanaryRevision
+	newStatus.SetCanaryRevision(workload.CanaryRevision)
 	r.Recorder.Eventf(rollout, corev1.EventTypeNormal, "Progressing", "workload has been rollback, then rollout is canceled")
 	klog.Infof("rollout(%s/%s) workload has been rollback directly, then rollout canceled", rollout.Namespace, rollout.Name)
 	progressingStateTransition(newStatus, corev1.ConditionTrue, v1alpha1.ProgressingReasonCancelling, "The workload has been rolled back and the rollout process will be cancelled")
@@ -243,12 +265,12 @@ func (r *RolloutReconciler) handleRollbackDirectly(rollout *v1beta1.Rollout, wor
 
 func (r *RolloutReconciler) handleRollbackInBatches(rollout *v1beta1.Rollout, workload *util.Workload, newStatus *v1beta1.RolloutStatus) error {
 	// restart from the beginning
-	newStatus.CanaryStatus.CurrentStepIndex = 1
-	newStatus.CanaryStatus.NextStepIndex = util.NextBatchIndex(rollout, 1)
-	newStatus.CanaryStatus.CanaryRevision = workload.CanaryRevision
-	newStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateInit
-	newStatus.CanaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
-	newStatus.CanaryStatus.RolloutHash = rollout.Annotations[util.RolloutHashAnnotation]
+	newStatus.GetSubStatus().CurrentStepIndex = 1
+	newStatus.GetSubStatus().NextStepIndex = util.NextBatchIndex(rollout, 1)
+	newStatus.SetCanaryRevision(workload.CanaryRevision)
+	newStatus.GetSubStatus().CurrentStepState = v1beta1.CanaryStepStateInit
+	newStatus.GetSubStatus().LastUpdateTime = &metav1.Time{Time: time.Now()}
+	newStatus.GetSubStatus().RolloutHash = rollout.Annotations[util.RolloutHashAnnotation]
 	klog.Infof("rollout(%s/%s) workload has been rollback in batches, then restart from beginning", rollout.Namespace, rollout.Name)
 	return nil
 }
@@ -262,32 +284,36 @@ func (r *RolloutReconciler) handleRolloutPlanChanged(c *RolloutContext) error {
 	}
 	// canary step configuration change causes current step index change
 	//TODO - 这样有一个坏处，就是有一次Reconcile会显示为-1，让用户迷惑；不过用户也可以通过修改这个字段为-1，重新执行当前阶段
-	if c.NewStatus.CanaryStatus.NextStepIndex == newStepIndex {
-		c.NewStatus.CanaryStatus.NextStepIndex = -1
+	if c.NewStatus.GetSubStatus().NextStepIndex == newStepIndex {
+		c.NewStatus.GetSubStatus().NextStepIndex = -1
 	} else {
-		c.NewStatus.CanaryStatus.NextStepIndex = newStepIndex
+		c.NewStatus.GetSubStatus().NextStepIndex = newStepIndex
 	}
 
-	c.NewStatus.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStatePaused
-	c.NewStatus.CanaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
-	c.NewStatus.CanaryStatus.RolloutHash = c.Rollout.Annotations[util.RolloutHashAnnotation]
+	c.NewStatus.GetSubStatus().CurrentStepState = v1beta1.CanaryStepStatePaused
+	c.NewStatus.GetSubStatus().LastUpdateTime = &metav1.Time{Time: time.Now()}
+	c.NewStatus.GetSubStatus().RolloutHash = c.Rollout.Annotations[util.RolloutHashAnnotation]
 	klog.Infof("rollout(%s/%s) canary step configuration change, and NextStepIndex(%d) state(%s)",
-		c.Rollout.Namespace, c.Rollout.Name, c.NewStatus.CanaryStatus.NextStepIndex, c.NewStatus.CanaryStatus.CurrentStepState)
+		c.Rollout.Namespace, c.Rollout.Name, c.NewStatus.GetSubStatus().NextStepIndex, c.NewStatus.GetSubStatus().CurrentStepState)
 	return nil
 }
 
 func (r *RolloutReconciler) handleNormalRolling(c *RolloutContext) error {
 	// check if canary is done
-	if c.NewStatus.CanaryStatus.CurrentStepState == v1beta1.CanaryStepStateCompleted {
+	if c.NewStatus.GetSubStatus().CurrentStepState == v1beta1.CanaryStepStateCompleted {
 		klog.Infof("rollout(%s/%s) progressing rolling done", c.Rollout.Namespace, c.Rollout.Name)
 		progressingStateTransition(c.NewStatus, corev1.ConditionTrue, v1alpha1.ProgressingReasonFinalising, "Rollout has been completed and some closing work is being done")
 		return nil
 	}
 	// 不允许用户修改为0
-	if c.NewStatus.CanaryStatus.NextStepIndex == 0 {
-		c.NewStatus.CanaryStatus.NextStepIndex = util.NextBatchIndex(c.Rollout, c.Rollout.Status.CanaryStatus.CurrentStepIndex)
+	if c.NewStatus.GetSubStatus().NextStepIndex == 0 {
+		c.NewStatus.GetSubStatus().NextStepIndex = util.NextBatchIndex(c.Rollout, c.Rollout.Status.GetSubStatus().CurrentStepIndex)
 	}
-	return r.canaryManager.runCanary(c)
+	releaseManager, err := r.getReleaseManager(c.Rollout)
+	if err != nil {
+		return err
+	}
+	return releaseManager.runCanary(c)
 }
 
 // name is rollout name, tr is trafficRouting name
@@ -347,57 +373,88 @@ func (r *RolloutReconciler) finalizeTrafficRouting(namespace, name, tr string) e
 
 ***********************************************************************
 */
+
+func (r *RolloutReconciler) getReleaseManager(rollout *v1beta1.Rollout) (ReleaseManager, error) {
+	if rollout.Spec.Strategy.IsCanaryStragegy() {
+		return r.canaryManager, nil
+	} else if rollout.Spec.Strategy.IsBlueGreenStragegy() {
+		return r.blueGreenManager, nil
+	}
+	return nil, fmt.Errorf("unknown rolling style: %s, and thus cannot call corresponding release manager", rollout.Spec.Strategy.GetRollingStyle())
+}
+
 func isRolloutPaused(rollout *v1beta1.Rollout) bool {
 	return rollout.Spec.Strategy.Paused
 }
 
 func isRolloutPlanChanged(rollout *v1beta1.Rollout) bool {
 	status := &rollout.Status
-	return status.CanaryStatus.RolloutHash != "" && status.CanaryStatus.RolloutHash != rollout.Annotations[util.RolloutHashAnnotation]
+	return status.GetSubStatus().RolloutHash != "" && status.GetSubStatus().RolloutHash != rollout.Annotations[util.RolloutHashAnnotation]
 }
 
 func isContinuousRelease(rollout *v1beta1.Rollout, workload *util.Workload) bool {
 	status := &rollout.Status
-	return status.CanaryStatus.CanaryRevision != "" && workload.CanaryRevision != status.CanaryStatus.CanaryRevision && !workload.IsInRollback
+	return status.GetCanaryRevision() != "" && workload.CanaryRevision != status.GetCanaryRevision() && !workload.IsInRollback
 }
 
 func isRollingBackDirectly(rollout *v1beta1.Rollout, workload *util.Workload) bool {
 	status := &rollout.Status
 	inBatch := util.IsRollbackInBatchPolicy(rollout, workload.Labels)
-	return workload.IsInRollback && workload.CanaryRevision != status.CanaryStatus.CanaryRevision && !inBatch
+	return workload.IsInRollback && workload.CanaryRevision != status.GetCanaryRevision() && !inBatch
 }
 
 func isRollingBackInBatches(rollout *v1beta1.Rollout, workload *util.Workload) bool {
 	status := &rollout.Status
 	inBatch := util.IsRollbackInBatchPolicy(rollout, workload.Labels)
-	return workload.IsInRollback && workload.CanaryRevision != status.CanaryStatus.CanaryRevision && inBatch
+	return workload.IsInRollback && workload.CanaryRevision != status.GetCanaryRevision() && inBatch
 }
 
 // 1. modify network api(ingress or gateway api) configuration, and route 100% traffic to stable pods
 // 2. remove batchRelease CR.
+// TODO - 直接复用doCanaryFinalising函数，判断FinalizeReason来跳过一些步骤（比如移除annotation，finalizingBatchRelease）
 func (r *RolloutReconciler) doProgressingReset(c *RolloutContext) (bool, error) {
-	if len(c.Rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
+	if c.Rollout.Spec.Strategy.HasTrafficRoutings() {
 		// modify network api(ingress or gateway api) configuration, and route 100% traffic to stable pods
 		tr := newTrafficRoutingContext(c)
-		done, err := r.trafficRoutingManager.PrepareFinalisingTrafficRouting(tr, v1beta1.FinaliseReasonContinuous)
+		done, err := r.trafficRoutingManager.RouteAllTrafficToCanaryORStable(tr, v1beta1.FinaliseReasonContinuous)
 		if err != nil || !done {
-			c.NewStatus.CanaryStatus.LastUpdateTime = tr.LastUpdateTime
+			c.NewStatus.GetSubStatus().LastUpdateTime = tr.LastUpdateTime
 			return done, err
 		}
 	}
-
-	done, err := r.canaryManager.removeBatchRelease(c)
+	/*
+		Note: 这里没有调用finalizingBatchRelease(c)，即没有set workload.pause=false; set workload.partition=0
+		+ 对于partition：
+			这样保持着现在（v1:v2）的比例（且v1+v2=100% replicas），直接进入下次发布，从第一批开始
+			此时v1+v2相当于之前说的老版本，v3是新版本；v1是stable版本（最老的active rs）；且有 v1+v2+v3=100% replicas，
+			缩容首先缩的是v2，之后再缩v1，这也决定了traffic（比如service slector）不能指向v2，
+			这是因为v2可能在中间就缩到0replicas了，所以流量得打到v1和v3上
+			同理，如果在连续发布前v1:v2=0:100%，那么连续发布后回到第一批，流量有一部分打到v1，这一部分就会失败
+			所以，保持和之前一样的逻辑，对于partition，最后一批如果replicas为100%，直接发布完成，不尊重pause
+		+ 对于canary：
+			canary-deployment会随着removeBatchRelease函数的调用而级联删除，而用户的deployment一直被paused
+			所以连续发布也没有v2 pods的存在，这种情况很简单
+		+ 对于bluegreen：
+			如果v1都是available，v2是unavailable，那么v3发布的时候，会先缩容v2
+			但是会不会有些情况v1被缩容，而v2没有被缩容？如果v1被全部缩容，那么打到v1的流量就会失败
+			这种情况虽然还没有遇到过，但是可能出现，比如在发布v2的时候，v1的pods还没有available，这种情况下蓝绿发布可以正常发布，但是
+			如果又进行了连续发布，那么缩容就可能会缩v1，一旦v1的pods被全部缩完，打到稳定版本的流量就全都失败了
+	*/
+	releaseManager, err := r.getReleaseManager(c.Rollout)
+	if err != nil {
+		return false, err
+	}
+	done, err := releaseManager.removeBatchRelease(c)
 	if err != nil {
 		klog.Errorf("rollout(%s/%s) DoFinalising batchRelease failed: %s", c.Rollout.Namespace, c.Rollout.Name, err.Error())
 		return false, err
 	} else if !done {
 		return false, nil
 	}
-
-	if len(c.Rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
+	if c.Rollout.Spec.Strategy.HasTrafficRoutings() {
 		tr := newTrafficRoutingContext(c)
 		done, err = r.trafficRoutingManager.FinalisingTrafficRouting(tr)
-		c.NewStatus.CanaryStatus.LastUpdateTime = tr.LastUpdateTime
+		c.NewStatus.GetSubStatus().LastUpdateTime = tr.LastUpdateTime
 		if err != nil || !done {
 			return done, err
 		}
@@ -406,7 +463,11 @@ func (r *RolloutReconciler) doProgressingReset(c *RolloutContext) (bool, error) 
 }
 
 func (r *RolloutReconciler) recalculateCanaryStep(c *RolloutContext) (int32, error) {
-	batch, err := r.canaryManager.fetchBatchRelease(c.Rollout.Namespace, c.Rollout.Name)
+	releaseManager, err := r.getReleaseManager(c.Rollout)
+	if err != nil {
+		return 0, err
+	}
+	batch, err := releaseManager.fetchBatchRelease(c.Rollout.Namespace, c.Rollout.Name)
 	if errors.IsNotFound(err) {
 		return 1, nil
 	} else if err != nil {
@@ -414,10 +475,10 @@ func (r *RolloutReconciler) recalculateCanaryStep(c *RolloutContext) (int32, err
 	}
 	currentReplicas, _ := intstr.GetScaledValueFromIntOrPercent(&batch.Spec.ReleasePlan.Batches[*batch.Spec.ReleasePlan.BatchPartition].CanaryReplicas, int(c.Workload.Replicas), true)
 	var stepIndex int32
-	currentIndex := c.NewStatus.CanaryStatus.CurrentStepIndex - 1
+	currentIndex := c.NewStatus.GetSubStatus().CurrentStepIndex - 1
 	steps := make([]int, 0)
 	steps = append(steps, int(currentIndex))
-	for i := 0; i < len(c.Rollout.Spec.Strategy.Canary.Steps); i++ {
+	for i := 0; i < len(c.Rollout.Spec.Strategy.GetSteps()); i++ {
 		if i == int(currentIndex) {
 			continue
 		}
@@ -425,7 +486,7 @@ func (r *RolloutReconciler) recalculateCanaryStep(c *RolloutContext) (int32, err
 	}
 
 	for _, i := range steps {
-		step := c.Rollout.Spec.Strategy.Canary.Steps[i]
+		step := c.Rollout.Spec.Strategy.GetSteps()[i]
 		var desiredReplicas int
 		desiredReplicas, _ = intstr.GetScaledValueFromIntOrPercent(step.Replicas, int(c.Workload.Replicas), true)
 		stepIndex = int32(i + 1)
@@ -446,7 +507,11 @@ func (r *RolloutReconciler) doFinalising(c *RolloutContext) (bool, error) {
 			return false, err
 		}
 	}
-	done, err := r.canaryManager.doCanaryFinalising(c)
+	releaseManager, err := r.getReleaseManager(c.Rollout)
+	if err != nil {
+		return false, err
+	}
+	done, err := releaseManager.doCanaryFinalising(c)
 	if err != nil {
 		klog.Errorf("rollout(%s/%s) Progressing failed: %s", c.Rollout.Namespace, c.Rollout.Name, err.Error())
 		return false, err
@@ -484,7 +549,7 @@ func setRolloutSucceededCondition(status *v1beta1.RolloutStatus, condStatus core
 }
 
 func newTrafficRoutingContext(c *RolloutContext) *trafficrouting.TrafficRoutingContext {
-	currentStep := c.Rollout.Spec.Strategy.Canary.Steps[c.NewStatus.CanaryStatus.CurrentStepIndex-1]
+	currentStep := c.Rollout.Spec.Strategy.GetSteps()[c.NewStatus.GetSubStatus().CurrentStepIndex-1]
 	var revisionLabelKey string
 	if c.Workload != nil {
 		revisionLabelKey = c.Workload.RevisionLabelKey
@@ -492,13 +557,13 @@ func newTrafficRoutingContext(c *RolloutContext) *trafficrouting.TrafficRoutingC
 	return &trafficrouting.TrafficRoutingContext{
 		Key:                          fmt.Sprintf("Rollout(%s/%s)", c.Rollout.Namespace, c.Rollout.Name),
 		Namespace:                    c.Rollout.Namespace,
-		ObjectRef:                    c.Rollout.Spec.Strategy.Canary.TrafficRoutings,
+		ObjectRef:                    c.Rollout.Spec.Strategy.GetTrafficRouting(),
 		Strategy:                     currentStep.TrafficRoutingStrategy,
 		OwnerRef:                     *metav1.NewControllerRef(c.Rollout, rolloutControllerKind),
 		RevisionLabelKey:             revisionLabelKey,
-		StableRevision:               c.NewStatus.CanaryStatus.StableRevision,
-		CanaryRevision:               c.NewStatus.CanaryStatus.PodTemplateHash,
-		LastUpdateTime:               c.NewStatus.CanaryStatus.LastUpdateTime,
-		DisableGenerateCanaryService: c.Rollout.Spec.Strategy.Canary.DisableGenerateCanaryService,
+		StableRevision:               c.NewStatus.GetSubStatus().StableRevision,
+		CanaryRevision:               c.NewStatus.GetSubStatus().PodTemplateHash,
+		LastUpdateTime:               c.NewStatus.GetSubStatus().LastUpdateTime,
+		DisableGenerateCanaryService: c.Rollout.Spec.Strategy.DisableGenerateCanaryService(),
 	}
 }

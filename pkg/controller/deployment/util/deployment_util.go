@@ -36,6 +36,7 @@ import (
 	"k8s.io/utils/integer"
 
 	rolloutsv1alpha1 "github.com/openkruise/rollouts/api/v1alpha1"
+	"github.com/openkruise/rollouts/api/v1beta1"
 	"github.com/openkruise/rollouts/pkg/util"
 )
 
@@ -924,6 +925,24 @@ func IsUnderRolloutControl(deployment *apps.Deployment) bool {
 		return false
 	}
 	return deployment.Spec.Paused
+}
+
+// IsOKForBlueGreen return true if this deployment is ready for BlueGreen
+// TODO - also check for other workload
+func IsOKForBlueGreen(deployment *apps.Deployment) bool {
+	if deployment.Annotations[util.BatchReleaseControlAnnotation] == "" {
+		return false
+	}
+	if deployment.Spec.Strategy.Type != apps.RollingUpdateDeploymentStrategyType || deployment.Spec.Strategy.RollingUpdate == nil {
+		return false
+	}
+	if deployment.Spec.Strategy.RollingUpdate.MaxUnavailable != nil && deployment.Spec.Strategy.RollingUpdate.MaxUnavailable.IntValue() != 0 {
+		return false
+	}
+	if deployment.Spec.MinReadySeconds != v1beta1.MaxReadySeconds || (deployment.Spec.ProgressDeadlineSeconds != nil && *deployment.Spec.ProgressDeadlineSeconds != v1beta1.MaxProgressSeconds) {
+		return false
+	}
+	return true
 }
 
 // NewRSReplicasLimit return a limited replicas of new RS calculated via partition.

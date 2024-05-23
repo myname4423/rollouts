@@ -79,6 +79,8 @@ func (rc *realController) ListOwnedPods() ([]*corev1.Pod, error) {
 	return rc.pods, err
 }
 
+// 插入标签；插入v1alpha1.DeploymentStrategyAnnotation注释；插入util.BatchReleaseControlAnnotation注释
+// 暂停；更改为Recreate；现在由advanced deployment controller控制
 func (rc *realController) Initialize(release *v1beta1.BatchRelease) error {
 	if deploymentutil.IsUnderRolloutControl(rc.object) {
 		return nil // No need initialize again.

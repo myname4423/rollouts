@@ -213,7 +213,9 @@ func signalRePrepareRollback(newStatus *v1beta1.BatchReleaseStatus) {
 }
 
 func signalRestartBatch(status *v1beta1.BatchReleaseStatus) {
+	// 因为在scaling，所以之前ready现在也不ready了
 	status.CanaryStatus.BatchReadyTime = nil
+	// 回到UpgradingBatchState状态了
 	status.CanaryStatus.CurrentBatchState = v1beta1.UpgradingBatchState
 }
 

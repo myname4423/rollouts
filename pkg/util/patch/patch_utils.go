@@ -222,3 +222,27 @@ func (s *DeploymentPatch) UpdatePaused(paused bool) *DeploymentPatch {
 	}
 	return s
 }
+
+func (s *DeploymentPatch) UpdateMinReadySeconds(seconds int32) *DeploymentPatch {
+	switch s.PatchType {
+	case types.StrategicMergePatchType, types.MergePatchType:
+		if _, ok := s.PatchData["spec"]; !ok {
+			s.PatchData["spec"] = make(map[string]interface{})
+		}
+		spec := s.PatchData["spec"].(map[string]interface{})
+		spec["minReadySeconds"] = seconds
+	}
+	return s
+}
+
+func (s *DeploymentPatch) UpdateProgressDeadlineSeconds(seconds int32) *DeploymentPatch {
+	switch s.PatchType {
+	case types.StrategicMergePatchType, types.MergePatchType:
+		if _, ok := s.PatchData["spec"]; !ok {
+			s.PatchData["spec"] = make(map[string]interface{})
+		}
+		spec := s.PatchData["spec"].(map[string]interface{})
+		spec["progressDeadlineSeconds"] = seconds
+	}
+	return s
+}

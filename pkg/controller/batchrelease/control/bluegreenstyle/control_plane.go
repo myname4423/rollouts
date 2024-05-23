@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package partitionstyle
+package bluegreenstyle
 
 import (
 	"context"
@@ -46,7 +46,10 @@ type realBatchControlPlane struct {
 
 type NewInterfaceFunc func(cli client.Client, key types.NamespacedName, gvk schema.GroupVersionKind) Interface
 
-// NewControlPlane creates a new release controller with partitioned-style to drive batch release state machine
+// NewControlPlane creates a new release controller with bluegreen-style to drive batch release state machine
+// 从上层接收一个BatchRelease对象，不像controller, err := rc.BuildController()得到的controller总是
+// 无状态的（通过构造batchContext, err := controller.CalculateBatchContext(rc.release)传入），realBatchControlPlane
+// 的函数都是不接受参数，因此本身是有状态的，毕竟结构体存储的release和newStatus
 func NewControlPlane(f NewInterfaceFunc, cli client.Client, recorder record.EventRecorder, release *v1beta1.BatchRelease, newStatus *v1beta1.BatchReleaseStatus, key types.NamespacedName, gvk schema.GroupVersionKind) *realBatchControlPlane {
 	return &realBatchControlPlane{
 		Client:        cli,
@@ -59,7 +62,7 @@ func NewControlPlane(f NewInterfaceFunc, cli client.Client, recorder record.Even
 }
 
 func (rc *realBatchControlPlane) Initialize() error {
-	// 赋值object，获取workloadInfo
+	klog.Info("--zyb says: in Initialize() function")
 	controller, err := rc.BuildController()
 	if err != nil {
 		return err
@@ -78,14 +81,16 @@ func (rc *realBatchControlPlane) Initialize() error {
 	rc.newStatus.ObservedWorkloadReplicas = workloadInfo.Replicas
 
 	// mark the pods that no need to update if it needs
-	noNeedUpdateReplicas, err := rc.markNoNeedUpdatePodsIfNeeds()
-	if noNeedUpdateReplicas != nil && err == nil {
-		rc.newStatus.CanaryStatus.NoNeedUpdateReplicas = noNeedUpdateReplicas
-	}
+	// given that rollback in batch is not desired
+	// noNeedUpdateReplicas, err := rc.markNoNeedUpdatePodsIfNeeds()
+	// if noNeedUpdateReplicas != nil && err == nil {
+	// 	rc.newStatus.CanaryStatus.NoNeedUpdateReplicas = noNeedUpdateReplicas
+	// }
 	return err
 }
 
 func (rc *realBatchControlPlane) UpgradeBatch() error {
+	klog.Info("--zyb says: in UpgradeBatch() function")
 	controller, err := rc.BuildController()
 	if err != nil {
 		return err
@@ -95,10 +100,10 @@ func (rc *realBatchControlPlane) UpgradeBatch() error {
 		return nil
 	}
 
-	err = rc.countAndUpdateNoNeedUpdateReplicas()
-	if err != nil {
-		return err
-	}
+	// err = rc.countAndUpdateNoNeedUpdateReplicas()
+	// if err != nil {
+	// 	return err
+	// }
 
 	batchContext, err := controller.CalculateBatchContext(rc.release)
 	if err != nil {
@@ -111,11 +116,13 @@ func (rc *realBatchControlPlane) UpgradeBatch() error {
 	if err != nil {
 		return err
 	}
-
-	return rc.patcher.PatchPodBatchLabel(batchContext)
+	// 不需要batch id：蓝绿和canary都不需要
+	// return rc.patcher.PatchPodBatchLabel(batchContext)
+	return nil
 }
 
 func (rc *realBatchControlPlane) CheckBatchReady() error {
+	klog.Info("--zyb says: in CheckBatchReady() function")
 	controller, err := rc.BuildController()
 	if err != nil {
 		return err
@@ -139,6 +146,7 @@ func (rc *realBatchControlPlane) CheckBatchReady() error {
 }
 
 func (rc *realBatchControlPlane) Finalize() error {
+	klog.Info("--zyb says: in Finalize() function")
 	controller, err := rc.BuildController()
 	if err != nil {
 		return client.IgnoreNotFound(err)
@@ -149,6 +157,7 @@ func (rc *realBatchControlPlane) Finalize() error {
 }
 
 func (rc *realBatchControlPlane) SyncWorkloadInformation() (control.WorkloadEventType, *util.WorkloadInfo, error) {
+	klog.Info("--zyb says: in SyncWorkloadInformation() function")
 	// ignore the sync if the release plan is deleted
 	if rc.release.DeletionTimestamp != nil {
 		return control.WorkloadNormalState, nil, nil

@@ -31,6 +31,7 @@ import (
 	appsv1alpha1 "github.com/openkruise/kruise-api/apps/v1alpha1"
 	appsv1beta1 "github.com/openkruise/kruise-api/apps/v1beta1"
 	"github.com/openkruise/rollouts/api/v1alpha1"
+	"github.com/openkruise/rollouts/api/v1beta1"
 	"github.com/openkruise/rollouts/pkg/feature"
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -415,6 +416,18 @@ func GetDeploymentStrategy(deployment *apps.Deployment) v1alpha1.DeploymentStrat
 	}
 	_ = json.Unmarshal([]byte(strategyStr), &strategy)
 	return strategy
+}
+
+// GetDeploymentStrategy decode the strategy object for advanced deployment
+// from the annotation rollouts.kruise.io/deployment-strategy
+func GetOriginalSetting(object client.Object) v1beta1.OriginalSetting {
+	setting := v1beta1.OriginalSetting{}
+	settingStr := object.GetAnnotations()[v1beta1.OriginalSettingAnnotation]
+	if settingStr == "" {
+		return setting
+	}
+	_ = json.Unmarshal([]byte(settingStr), &setting)
+	return setting
 }
 
 // GetDeploymentExtraStatus decode the extra-status object for advanced deployment

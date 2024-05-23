@@ -67,8 +67,9 @@ var (
 				Name:       "sample",
 			},
 			ReleasePlan: v1beta1.ReleasePlan{
-				EnableExtraWorkloadForCanary: true,
-				BatchPartition:               pointer.Int32(0),
+				RollingStyle: v1beta1.CanaryRollingStyle,
+				// EnableExtraWorkloadForCanary: true,
+				BatchPartition: pointer.Int32(0),
 				Batches: []v1beta1.ReleaseBatch{
 					{
 						CanaryReplicas: intstr.FromString("10%"),
@@ -147,6 +148,7 @@ var (
 			},
 			ReleasePlan: v1beta1.ReleasePlan{
 				BatchPartition: pointer.Int32Ptr(0),
+				RollingStyle:   v1beta1.PartitionRollingStyle,
 				Batches: []v1beta1.ReleaseBatch{
 					{
 						CanaryReplicas: intstr.FromString("10%"),

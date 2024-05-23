@@ -164,7 +164,7 @@ func (r *BatchReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	klog.Infof("Begin to reconcile BatchRelease(%v/%v), release-phase: %v", release.Namespace, release.Name, release.Status.Phase)
+	klog.Infof("-------------------Begin to reconcile BatchRelease(%v/%v), release-phase: %v-----------------------", release.Namespace, release.Name, release.Status.Phase)
 
 	//  If workload watcher does not exist, then add the watcher dynamically
 	workloadRef := release.Spec.WorkloadRef

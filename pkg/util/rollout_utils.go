@@ -47,7 +47,7 @@ type RolloutState struct {
 
 func IsRollbackInBatchPolicy(rollout *rolloutv1beta1.Rollout, labels map[string]string) bool {
 	// currently, only support the case of no traffic routing
-	if len(rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
+	if rollout.Spec.Strategy.HasTrafficRoutings() {
 		return false
 	}
 	workloadRef := rollout.Spec.WorkloadRef
@@ -169,30 +169,9 @@ func NextBatchIndex(rollout *rolloutv1beta1.Rollout, CurrentStepIndex int32) int
 	if rollout == nil {
 		return 0
 	}
-	allSteps := int32(len(rollout.Spec.Strategy.Canary.Steps))
+	allSteps := int32(len(rollout.Spec.Strategy.GetSteps()))
 	if CurrentStepIndex >= allSteps {
 		return 0
 	}
 	return CurrentStepIndex + 1
-}
-
-func IsBlueGreenStrategy(rollout *rolloutv1beta1.Rollout) bool {
-	if rollout == nil {
-		return false
-	}
-	return true
-}
-
-func IsCanaryStrategy(rollout *rolloutv1beta1.Rollout) bool {
-	if rollout == nil {
-		return false
-	}
-	return rollout.Spec.Strategy.Canary.EnableExtraWorkloadForCanary
-}
-
-func IsBatchStrategy(rollout *rolloutv1beta1.Rollout) bool {
-	if rollout == nil {
-		return false
-	}
-	return !rollout.Spec.Strategy.Canary.EnableExtraWorkloadForCanary
 }

@@ -54,6 +54,8 @@ type ReleasePlan struct {
 	// only support for canary deployment
 	// +optional
 	PatchPodTemplateMetadata *PatchPodTemplateMetadata `json:"patchPodTemplateMetadata,omitempty"`
+
+	RollingStyle RollingStyleType `json:"rollingStyle,omitempty"`
 }
 
 type FinalizingPolicyType uint16

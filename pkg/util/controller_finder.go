@@ -87,7 +87,7 @@ func NewControllerFinder(c client.Client) *ControllerFinder {
 
 func (r *ControllerFinder) GetWorkloadForRef(rollout *rolloutv1beta1.Rollout) (*Workload, error) {
 	workloadRef := rollout.Spec.WorkloadRef
-	if rollout.Spec.Strategy.Canary.EnableExtraWorkloadForCanary {
+	if rollout.Spec.Strategy.IsCanaryRelease() {
 		for _, finder := range append(r.canaryStyleFinders(), r.partitionStyleFinders()...) {
 			workload, err := finder(rollout.Namespace, &workloadRef)
 			if workload != nil || err != nil {
@@ -252,8 +252,10 @@ func (r *ControllerFinder) getAdvancedDeployment(namespace string, ref *rolloutv
 	if err != nil {
 		return &Workload{IsStatusConsistent: false}, err
 	}
+	// 为什么不直接用deployment的spec.template而是先找rs
 	newRS, _ := FindCanaryAndStableReplicaSet(rss, deployment)
 	if newRS != nil {
+		//不是workload spec.template的hash，而是对应的rs的label的hash；它们的spec.template应该Equal(IgnoreHash)
 		workload.PodTemplateHash = newRS.Labels[apps.DefaultDeploymentUniqueLabelKey]
 	}
 	// in rolling back

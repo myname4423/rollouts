@@ -64,6 +64,7 @@ var _ admission.Handler = &WorkloadHandler{}
 
 // Handle handles admission requests.
 func (h *WorkloadHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	klog.Infof("--zyb says: webhook Handle")
 	// if subResources, then ignore
 	if req.Operation != admissionv1.Update || req.SubResource != "" {
 		return admission.Allowed("")
@@ -242,7 +243,7 @@ func (h *WorkloadHandler) handleStatefulSetLikeWorkload(newObj, oldObj *unstruct
 	rollout, err := h.fetchMatchedRollout(newObj)
 	if err != nil {
 		return false, err
-	} else if rollout == nil || rollout.Spec.Strategy.Canary == nil {
+	} else if rollout == nil || rollout.Spec.Strategy.IsEmptyRelease() {
 		return false, nil
 	}
 
@@ -263,13 +264,15 @@ func (h *WorkloadHandler) handleDeployment(newObj, oldObj *apps.Deployment) (boo
 	// in rollout progressing
 	if newObj.Annotations[util.InRolloutProgressingAnnotation] != "" {
 		modified := false
-		if !newObj.Spec.Paused {
-			modified = true
-			newObj.Spec.Paused = true
-		}
 		strategy := util.GetDeploymentStrategy(newObj)
-		switch strings.ToLower(string(strategy.RollingStyle)) {
-		case strings.ToLower(string(appsv1alpha1.PartitionRollingStyle)):
+		originalSetting := util.GetOriginalSetting(newObj)
+		// partition
+		if strings.EqualFold(string(strategy.RollingStyle), string(appsv1alpha1.PartitionRollingStyle)) {
+			klog.Infof("--zyb says: partiton style")
+			if !newObj.Spec.Paused {
+				modified = true
+				newObj.Spec.Paused = true
+			}
 			// Make sure it is always Recreate to disable native controller
 			if newObj.Spec.Strategy.Type == apps.RollingUpdateDeploymentStrategyType {
 				modified = true
@@ -284,10 +287,40 @@ func (h *WorkloadHandler) handleDeployment(newObj, oldObj *apps.Deployment) (boo
 			if isEffectiveDeploymentRevisionChange(oldObj, newObj) {
 				modified = true
 				strategy.Paused = true
+				klog.Warningf("successive release for partiton")
 			}
 			appsv1alpha1.SetDefaultDeploymentStrategy(&strategy)
 			setDeploymentStrategyAnnotation(strategy, newObj)
-		default:
+		} else if originalSetting.Strategy != nil { // bluegreenStyle
+			klog.Infof("--zyb says: bluegreen style")
+			if isEffectiveDeploymentRevisionChange(oldObj, newObj) {
+				modified = true
+				newObj.Spec.Paused = true
+				// 如果是连续发布，设置这个参数以确保一定缩容v2而非v1(不会出现v1 unavailable而v2 available的情况)
+				newObj.Spec.MinReadySeconds = 0
+				klog.Warningf("successive release or rollback detected, while successive release is not recommended for bluegreen")
+			}
+			// 禁止对RollingUpdate Type进行更改
+			if newObj.Spec.Strategy.Type != apps.RollingUpdateDeploymentStrategyType {
+				modified = true
+				newObj.Spec.Strategy.Type = oldObj.Spec.Strategy.Type
+				klog.Warningf("Not allow to modify Strategy.Type to Recreate")
+			}
+			/*
+				NOTE:
+				Users can actually modify MinReadySeconds, ProgressDeadlineSeconds, and even RollingUpdate.MaxUnavailable/MaxSurge,
+				which gives them more control. Such as, setting MinReadySeconds to 0 to allow rolling out all new version of Pods immediately,
+				or increasing maxSurge to create more Pods in current batch.
+				However, modifying MinReadySeconds and ProgressDeadlineSeconds is at the users' own risk, especially when dealing with
+				traffic strategy.
+			*/
+
+		} else { // canaryStyle
+			klog.Infof("--zyb says: default style")
+			if !newObj.Spec.Paused {
+				modified = true
+				newObj.Spec.Paused = true
+			}
 			// Do not allow to modify strategy as Recreate during rolling
 			if newObj.Spec.Strategy.Type == apps.RecreateDeploymentStrategyType {
 				modified = true
@@ -310,7 +343,7 @@ func (h *WorkloadHandler) handleDeployment(newObj, oldObj *apps.Deployment) (boo
 	rollout, err := h.fetchMatchedRollout(newObj)
 	if err != nil {
 		return false, err
-	} else if rollout == nil || rollout.Spec.Strategy.Canary == nil {
+	} else if rollout == nil || rollout.Spec.Strategy.IsEmptyRelease() {
 		return false, nil
 	}
 	rss, err := h.Finder.GetReplicaSetsForDeployment(newObj)
@@ -319,7 +352,7 @@ func (h *WorkloadHandler) handleDeployment(newObj, oldObj *apps.Deployment) (boo
 		return false, nil
 	}
 	// if traffic routing, workload must only be one version of Pods
-	if len(rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 {
+	if rollout.Spec.Strategy.HasTrafficRoutings() {
 		if len(rss) != 1 {
 			klog.Warningf("Because deployment(%s/%s) have multiple versions of Pods, so can not enter rollout progressing", newObj.Namespace, newObj.Name)
 			return false, nil
@@ -334,6 +367,7 @@ func (h *WorkloadHandler) handleDeployment(newObj, oldObj *apps.Deployment) (boo
 		if newObj.Labels == nil {
 			newObj.Labels = map[string]string{}
 		}
+		// 所以蓝绿也会有这个label
 		newObj.Labels[appsv1alpha1.DeploymentStableRevisionLabel] = stableRS.Labels[apps.DefaultDeploymentUniqueLabelKey]
 	}
 
@@ -365,11 +399,11 @@ func (h *WorkloadHandler) handleCloneSet(newObj, oldObj *kruiseappsv1alpha1.Clon
 	rollout, err := h.fetchMatchedRollout(newObj)
 	if err != nil {
 		return false, err
-	} else if rollout == nil || rollout.Spec.Strategy.Canary == nil {
+	} else if rollout == nil || rollout.Spec.Strategy.IsEmptyRelease() {
 		return false, nil
 	}
 	// if traffic routing, there must only be one version of Pods
-	if len(rollout.Spec.Strategy.Canary.TrafficRoutings) > 0 && newObj.Status.Replicas != newObj.Status.UpdatedReplicas {
+	if rollout.Spec.Strategy.HasTrafficRoutings() && newObj.Status.Replicas != newObj.Status.UpdatedReplicas {
 		klog.Warningf("Because cloneSet(%s/%s) have multiple versions of Pods, so can not enter rollout progressing", newObj.Namespace, newObj.Name)
 		return false, nil
 	}
@@ -398,7 +432,7 @@ func (h *WorkloadHandler) handleDaemonSet(newObj, oldObj *kruiseappsv1alpha1.Dae
 	rollout, err := h.fetchMatchedRollout(newObj)
 	if err != nil {
 		return false, err
-	} else if rollout == nil || rollout.Spec.Strategy.Canary == nil {
+	} else if rollout == nil || rollout.Spec.Strategy.IsEmptyRelease() {
 		return false, nil
 	}
 
