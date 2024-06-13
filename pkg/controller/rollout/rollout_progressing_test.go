@@ -417,7 +417,7 @@ func TestReconcileRolloutProgressing(t *testing.T) {
 				s.CanaryStatus.PodTemplateHash = "pod-template-hash-v2"
 				s.CanaryStatus.CurrentStepIndex = 4
 				s.CanaryStatus.NextStepIndex = 0
-				s.CanaryStatus.FinalisingStep = v1beta1.FinalisingStepTypeCanaryService
+				s.CanaryStatus.FinalisingStep = v1beta1.FinalisingStepTypeBatchRelease
 				s.CanaryStatus.CurrentStepState = v1beta1.CanaryStepStateCompleted
 				cond := util.GetRolloutCondition(*s, v1beta1.RolloutConditionProgressing)
 				cond.Reason = v1alpha1.ProgressingReasonFinalising

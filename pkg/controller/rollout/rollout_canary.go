@@ -355,9 +355,8 @@ func (m *canaryReleaseManager) doCanaryFinalising(c *RolloutContext) (bool, erro
 	default:
 		canaryStatus.FinalisingStep = v1beta1.FinalisingStepTypeStableService
 		fallthrough
-
+	// restore stable service selector to select all pods [with grace time]
 	case v1beta1.FinalisingStepTypeStableService:
-		// restore stable service selector to select all pods [with grace time]
 		done, err := m.trafficRoutingManager.RestoreStableService(tr)
 		if err != nil || !done {
 			canaryStatus.LastUpdateTime = tr.LastUpdateTime
@@ -365,34 +364,14 @@ func (m *canaryReleaseManager) doCanaryFinalising(c *RolloutContext) (bool, erro
 		}
 		canaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
 		canaryStatus.FinalisingStep = v1beta1.FinalisingStepTypeGateway
-
+	// modify network api(ingress or gateway api) configuration; delete canary service
 	case v1beta1.FinalisingStepTypeGateway:
-		// modify network api(ingress or gateway api) configuration
 		done, err := m.trafficRoutingManager.FinalisingTrafficRouting(tr)
 		if err != nil || !done {
 			canaryStatus.LastUpdateTime = tr.LastUpdateTime
 			return done, err
 		}
 		canaryStatus.LastUpdateTime = &metav1.Time{Time: time.Now()}
-		canaryStatus.FinalisingStep = v1beta1.FinalisingStepTypeCanaryService
-
-	/*
-		//TODO - As mentioned in FinalisingTrafficRouting function,
-		we should wait grace time between FinalisingStepTypeGateway and FinalisingStepTypeCanaryService
-		to avoid a very rare case which could cause minor traffic loss (espically, Istio), but it's difficult
-		to implement now.
-		However, we still reserve the FinalisingStepTypeCanaryService step here, but instead of removing the
-		canary Service as expected (which has been done in FinalisingStepTypeGateway), FinalisingStepTypeCanaryService
-		simply wait a gracetime between FinalisingStepTypeCanaryService and FinalisingStepTypeDeleteBR now
-	*/
-	case v1beta1.FinalisingStepTypeCanaryService:
-		// wait a gracetime for safety
-		if canaryStatus.LastUpdateTime != nil {
-			if verifyTime := canaryStatus.LastUpdateTime.Add(time.Second * time.Duration(3)); verifyTime.After(time.Now()) {
-				klog.Infof("restoring network configuration, but we need to wait %d seconds", 3)
-				return false, nil
-			}
-		}
 		canaryStatus.FinalisingStep = v1beta1.FinalisingStepTypeBatchRelease
 
 	case v1beta1.FinalisingStepTypeBatchRelease:
